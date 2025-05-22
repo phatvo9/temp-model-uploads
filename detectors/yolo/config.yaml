@@ -1,0 +1,180 @@
+model:
+  id: yolo11
+  user_id: phatvo
+  app_id: image-model-pythonic
+  model_type_id: visual-detector
+build_info:
+  python_version: '3.11'
+inference_compute_info:
+  cpu_limit: '3'
+  cpu_memory: 14Gi
+  num_accelerators: 1
+  accelerator_type:
+  - NVIDIA-A10G
+  - NVIDIA-L40S
+  - NVIDIA-A100
+  - NVIDIA-H100
+  accelerator_memory: 22Gi
+num_threads: 64
+
+concepts:
+- id: person
+  name: person
+- id: bicycle
+  name: bicycle
+- id: car
+  name: car
+- id: motorbike
+  name: motorbike
+- id: aeroplane
+  name: aeroplane
+- id: bus
+  name: bus
+- id: train
+  name: train
+- id: truck
+  name: truck
+- id: boat
+  name: boat
+- id: traffic-light
+  name: traffic light
+- id: fire-hydrant
+  name: fire hydrant
+- id: stop-sign
+  name: stop sign
+- id: parking-meter
+  name: parking meter
+- id: bench
+  name: bench
+- id: bird
+  name: bird
+- id: cat
+  name: cat
+- id: dog
+  name: dog
+- id: horse
+  name: horse
+- id: sheep
+  name: sheep
+- id: cow
+  name: cow
+- id: elephant
+  name: elephant
+- id: bear
+  name: bear
+- id: zebra
+  name: zebra
+- id: giraffe
+  name: giraffe
+- id: backpack
+  name: backpack
+- id: umbrella
+  name: umbrella
+- id: handbag
+  name: handbag
+- id: tie
+  name: tie
+- id: suitcase
+  name: suitcase
+- id: frisbee
+  name: frisbee
+- id: skis
+  name: skis
+- id: snowboard
+  name: snowboard
+- id: sports-ball
+  name: sports ball
+- id: kite
+  name: kite
+- id: baseball-bat
+  name: baseball bat
+- id: baseball-glove
+  name: baseball glove
+- id: skateboard
+  name: skateboard
+- id: surfboard
+  name: surfboard
+- id: tennis-racket
+  name: tennis racket
+- id: bottle
+  name: bottle
+- id: wine-glass
+  name: wine glass
+- id: cup
+  name: cup
+- id: fork
+  name: fork
+- id: knife
+  name: knife
+- id: spoon
+  name: spoon
+- id: bowl
+  name: bowl
+- id: banana
+  name: banana
+- id: apple
+  name: apple
+- id: sandwich
+  name: sandwich
+- id: orange
+  name: orange
+- id: broccoli
+  name: broccoli
+- id: carrot
+  name: carrot
+- id: hot-dog
+  name: hot dog
+- id: pizza
+  name: pizza
+- id: donut
+  name: donut
+- id: cake
+  name: cake
+- id: chair
+  name: chair
+- id: sofa
+  name: sofa
+- id: pottedplant
+  name: pottedplant
+- id: bed
+  name: bed
+- id: diningtable
+  name: diningtable
+- id: toilet
+  name: toilet
+- id: tvmonitor
+  name: tvmonitor
+- id: laptop
+  name: laptop
+- id: mouse
+  name: mouse
+- id: remote
+  name: remote
+- id: keyboard
+  name: keyboard
+- id: cell-phone
+  name: cell phone
+- id: microwave
+  name: microwave
+- id: oven
+  name: oven
+- id: toaster
+  name: toaster
+- id: sink
+  name: sink
+- id: refrigerator
+  name: refrigerator
+- id: book
+  name: book
+- id: clock
+  name: clock
+- id: vase
+  name: vase
+- id: scissors
+  name: scissors
+- id: teddy-bear
+  name: teddy bear
+- id: hair-drier
+  name: hair drier
+- id: 'toothbrush'
+  name: toothbrush
