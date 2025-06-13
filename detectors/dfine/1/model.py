@@ -18,6 +18,7 @@ from clarifai.runners.utils.data_types import Concept, Image, Video, Region
 from clarifai.utils.logging import logger
 from clarifai.runners.utils.data_utils import Param
 
+THRESHOLD = 0.3
 
 def preprocess_image(image_bytes: bytes) -> PILImage:
     """Convert image bytes into RGB format suitable for model processing.
@@ -35,7 +36,8 @@ def detect_objects(
     images: List[PILImage],
     model: DFineForObjectDetection,
     processor: AutoImageProcessor,
-    device: str
+    device: str,
+    threshold:float = THRESHOLD
 ) -> Dict[str, Any]:
     """Process images through the DETR model to detect objects.
 
@@ -51,14 +53,13 @@ def detect_objects(
     model_inputs = processor(images=images, return_tensors="pt").to(device)
     model_inputs = {name: tensor.to(device) for name, tensor in model_inputs.items()}
     model_output = model(**model_inputs)
-    results = processor.post_process_object_detection(model_output)
+    results = processor.post_process_object_detection(model_output, threshold=threshold)
     return results
 
 
 def process_detections(
     results: List[Dict[str, torch.Tensor]],
     images: List[PILImage],
-    threshold: float,
     model_labels: Dict[int, str]
 ) -> List[List[Region]]:
     """Convert model outputs into a structured format of detections.
@@ -66,7 +67,6 @@ def process_detections(
     Args:
         results: Raw detection results from model
         images: Original input images
-        threshold: Confidence threshold for detections
         model_labels: Dictionary mapping label indices to names
 
     Returns:
@@ -77,14 +77,13 @@ def process_detections(
         image = images[i]
         detections = []
         for score, label_idx, box in zip(result["scores"], result["labels"], result["boxes"]):
-            if score > threshold:
-                label = model_labels[label_idx.item()]
-                detections.append(
-                    Region(
-                        box=box.tolist(),
-                        concepts=[Concept(id=label, name=label, value=score.item())]
-                    )
+            label = model_labels[label_idx.item()]
+            detections.append(
+                Region(
+                    box=box.tolist(),
+                    concepts=[Concept(id=label, name=label, value=score.item())]
                 )
+            )
         outputs.append(detections)
     return outputs
 
@@ -129,7 +128,6 @@ class MyRunner(ModelClass):
         self.model = DFineForObjectDetection.from_pretrained(checkpoint_path).to(self.device)
         self.processor = AutoImageProcessor.from_pretrained(checkpoint_path)
         self.model.eval()
-        self.threshold = 0.9
         self.model_labels = self.model.config.id2label
 
         logger.info("Done loading!")
@@ -140,7 +138,7 @@ class MyRunner(ModelClass):
         image: Image, 
         threshold: float = Param(
             description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
-            default=0.9,
+            default=THRESHOLD,
         )
     ) -> List[Region]:
         """Process a single image and return detected objects."""
@@ -148,8 +146,8 @@ class MyRunner(ModelClass):
         image = preprocess_image(image_bytes)
         logger.info(f"Recieved image: {image}")
         with torch.no_grad():
-            results = detect_objects([image], self.model, self.processor, self.device)
-            outputs = process_detections(results, [image], threshold, self.model_labels)
+            results = detect_objects([image], self.model, self.processor, self.device, threshold=threshold)
+            outputs = process_detections(results, [image], self.model_labels)
             return outputs[0]  # Return detections for single image
 
     @ModelClass.method
@@ -158,7 +156,7 @@ class MyRunner(ModelClass):
         video: Video,
         threshold: float = Param(
             description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
-            default=0.9,
+            default=THRESHOLD,
         )
     ) -> Iterator[List[Region]]:
         """Process video frames and yield detected objects for each frame."""
@@ -167,8 +165,8 @@ class MyRunner(ModelClass):
         for frame in frame_generator:
             image = preprocess_image(frame)
             with torch.no_grad():
-                results = detect_objects([image], self.model, self.processor, self.device)
-                outputs = process_detections(results, [image], threshold, self.model_labels)
+                results = detect_objects([image], self.model, self.processor, self.device, threshold=threshold)
+                outputs = process_detections(results, [image], self.model_labels)
                 yield outputs[0]  # Yield detections for each frame
 
     @ModelClass.method
@@ -176,7 +174,7 @@ class MyRunner(ModelClass):
         self, images: Iterator[Image],
         threshold: float = Param(
             description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
-            default=0.9,
+            default=THRESHOLD,
         )) -> Iterator[List[Region]]:
         """Stream process image inputs."""
         logger.info("Starting stream processing for images")
