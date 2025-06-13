@@ -16,6 +16,7 @@ from clarifai.runners.models.model_class import ModelClass
 from clarifai.runners.models.model_builder import ModelBuilder
 from clarifai.runners.utils.data_types import Concept, Image, Video, Region
 from clarifai.utils.logging import logger
+from clarifai.runners.utils.data_utils import Param
 
 
 def preprocess_image(image_bytes: bytes) -> PILImage:
@@ -124,9 +125,6 @@ class MyRunner(ModelClass):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         logger.info(f"Running on device: {self.device}")
         checkpoint_path = "ustc-community/dfine-large-obj2coco-e25"
-        # model_path = os.path.dirname(os.path.dirname(__file__))
-        # builder = ModelBuilder(model_path, download_validation_only=True)
-        # checkpoint_path = builder.download_checkpoints(stage="runtime")
         
         self.model = DFineForObjectDetection.from_pretrained(checkpoint_path).to(self.device)
         self.processor = AutoImageProcessor.from_pretrained(checkpoint_path)
@@ -137,18 +135,32 @@ class MyRunner(ModelClass):
         logger.info("Done loading!")
 
     @ModelClass.method 
-    def predict(self, image: Image) -> List[Region]:
+    def predict(
+        self, 
+        image: Image, 
+        threshold: float = Param(
+            description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
+            default=0.9,
+        )
+    ) -> List[Region]:
         """Process a single image and return detected objects."""
         image_bytes = image.bytes
         image = preprocess_image(image_bytes)
         logger.info(f"Recieved image: {image}")
         with torch.no_grad():
             results = detect_objects([image], self.model, self.processor, self.device)
-            outputs = process_detections(results, [image], self.threshold, self.model_labels)
+            outputs = process_detections(results, [image], threshold, self.model_labels)
             return outputs[0]  # Return detections for single image
 
     @ModelClass.method
-    def generate(self, video: Video) -> Iterator[List[Region]]:
+    def generate(
+        self, 
+        video: Video,
+        threshold: float = Param(
+            description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
+            default=0.9,
+        )
+    ) -> Iterator[List[Region]]:
         """Process video frames and yield detected objects for each frame."""
         video_bytes = video.bytes
         frame_generator = video_to_frames(video_bytes)
@@ -156,28 +168,24 @@ class MyRunner(ModelClass):
             image = preprocess_image(frame)
             with torch.no_grad():
                 results = detect_objects([image], self.model, self.processor, self.device)
-                outputs = process_detections(results, [image], self.threshold, self.model_labels)
+                outputs = process_detections(results, [image], threshold, self.model_labels)
                 yield outputs[0]  # Yield detections for each frame
 
     @ModelClass.method
-    def stream_image(self, image_stream: Iterator[Image]) -> Iterator[List[Region]]:
+    def stream(
+        self, images: Iterator[Image],
+        threshold: float = Param(
+            description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
+            default=0.9,
+        )) -> Iterator[List[Region]]:
         """Stream process image inputs."""
         logger.info("Starting stream processing for images")
-        for image in image_stream:
+        for image in images:
             start_time = time.time()
-            result = self.predict(image)
+            result = self.predict(image, threshold=threshold)
             yield result
             logger.info(f"Processing time: {time.time() - start_time:.3f}s")
 
-    @ModelClass.method
-    def stream_video(self, video_stream: Iterator[Video]) -> Iterator[List[Region]]:
-        """Stream process video inputs."""
-        logger.info("Starting stream processing for videos")
-        for video in video_stream:
-            start_time = time.time()
-            for frame_result in self.generate(video):
-                yield frame_result
-            logger.info(f"Processing time: {time.time() - start_time:.3f}s")
         
     def test(self):
         """Test the model functionality."""
@@ -222,18 +230,11 @@ class MyRunner(ModelClass):
             # Split into two separate test functions for clarity
             def test_stream_image():
                 images = [get_test_data(url) for url in TEST_URLS["images"]]
-                for result in self.stream_image(iter(images)):
+                for result in self.stream(iter(images)):
                     logger.info(f"Image stream result: {result}")
-
-            def test_stream_video():
-                for result in self.stream_video(iter([get_test_video()])):
-                    logger.info(f"Video stream result: {result}")
-                    break  # Just test first frame
 
             logger.info("\nTesting image streaming...")
             test_stream_image()
-            logger.info("\nTesting video streaming...")
-            test_stream_video()
 
         # Run all tests
         for test_name, test_fn in [
