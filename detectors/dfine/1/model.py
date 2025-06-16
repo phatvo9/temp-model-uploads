@@ -10,6 +10,7 @@ import cv2
 import torch
 from PIL import Image as PILImage
 from transformers import DFineForObjectDetection, AutoImageProcessor
+from torchvision.ops import nms
 
 # Clarifai imports
 from clarifai.runners.models.model_class import ModelClass
@@ -18,7 +19,8 @@ from clarifai.runners.utils.data_types import Concept, Image, Video, Region
 from clarifai.utils.logging import logger
 from clarifai.runners.utils.data_utils import Param
 
-THRESHOLD = 0.3
+THRESHOLD = 0.25
+IOU_THRESHOLD = 0.2
 
 def preprocess_image(image_bytes: bytes) -> PILImage:
     """Convert image bytes into RGB format suitable for model processing.
@@ -57,17 +59,22 @@ def detect_objects(
     return results
 
 
+
 def process_detections(
     results: List[Dict[str, torch.Tensor]],
     images: List[PILImage],
-    model_labels: Dict[int, str]
+    model_labels: Dict[int, str],
+    iou_threshold: float = IOU_THRESHOLD,
+    use_nms: bool = True
 ) -> List[List[Region]]:
-    """Convert model outputs into a structured format of detections.
+    """Convert model outputs into a structured format of detections, with optional NMS.
 
     Args:
         results: Raw detection results from model
         images: Original input images
         model_labels: Dictionary mapping label indices to names
+        nms_iou_threshold: IoU threshold for non-maximum suppression
+        use_nms: Whether to apply non-maximum suppression
 
     Returns:
         List of lists containing Region objects for each detection
@@ -76,7 +83,19 @@ def process_detections(
     for i, result in enumerate(results):
         image = images[i]
         detections = []
-        for score, label_idx, box in zip(result["scores"], result["labels"], result["boxes"]):
+
+        boxes = result["boxes"]
+        scores = result["scores"]
+        labels = result["labels"]
+
+        # Apply NMS if enabled
+        if use_nms:
+            keep = nms(boxes, scores, iou_threshold)
+            boxes = boxes[keep]
+            scores = scores[keep]
+            labels = labels[keep]
+
+        for score, label_idx, box in zip(scores, labels, boxes):
             label = model_labels[label_idx.item()]
             detections.append(
                 Region(
@@ -84,7 +103,9 @@ def process_detections(
                     concepts=[Concept(id=label, name=label, value=score.item())]
                 )
             )
+
         outputs.append(detections)
+
     return outputs
 
 
@@ -136,9 +157,17 @@ class MyRunner(ModelClass):
     def predict(
         self, 
         image: Image, 
-        threshold: float = Param(
+        conf_threshold: float = Param(
             description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
             default=THRESHOLD,
+        ),
+        use_nms: bool = Param(
+            description="Enable non-maximum suppression.",
+            default=True,
+        ),
+        iou_threshold: float = Param(
+            description="IoU threshold for non-maximum suppression, only applicable when use_nms=True",
+            default=IOU_THRESHOLD,
         )
     ) -> List[Region]:
         """Process a single image and return detected objects."""
@@ -146,17 +175,26 @@ class MyRunner(ModelClass):
         image = preprocess_image(image_bytes)
         logger.info(f"Recieved image: {image}")
         with torch.no_grad():
-            results = detect_objects([image], self.model, self.processor, self.device, threshold=threshold)
-            outputs = process_detections(results, [image], self.model_labels)
+            results = detect_objects([image], self.model, self.processor, self.device, threshold=conf_threshold)
+            outputs = process_detections(results, [image], self.model_labels, iou_threshold=iou_threshold, use_nms=use_nms)
             return outputs[0]  # Return detections for single image
+
 
     @ModelClass.method
     def generate(
         self, 
         video: Video,
-        threshold: float = Param(
+        conf_threshold: float = Param(
             description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
             default=THRESHOLD,
+        ),
+        use_nms: bool = Param(
+            description="Enable non-maximum suppression.",
+            default=True,
+        ),
+        iou_threshold: float = Param(
+            description="IoU threshold for non-maximum suppression, only applicable when use_nms=True",
+            default=IOU_THRESHOLD,
         )
     ) -> Iterator[List[Region]]:
         """Process video frames and yield detected objects for each frame."""
@@ -165,22 +203,33 @@ class MyRunner(ModelClass):
         for frame in frame_generator:
             image = preprocess_image(frame)
             with torch.no_grad():
-                results = detect_objects([image], self.model, self.processor, self.device, threshold=threshold)
-                outputs = process_detections(results, [image], self.model_labels)
+                results = detect_objects([image], self.model, self.processor, self.device, threshold=conf_threshold, )
+                outputs = process_detections(results, [image], self.model_labels, iou_threshold=iou_threshold, use_nms=use_nms)
                 yield outputs[0]  # Yield detections for each frame
+
 
     @ModelClass.method
     def stream(
-        self, images: Iterator[Image],
-        threshold: float = Param(
+        self, 
+        images: Iterator[Image],
+        conf_threshold: float = Param(
             description="The `confidence threshold` value specifies the minimum confidence required for a result to be accepted or considered valid.",
             default=THRESHOLD,
-        )) -> Iterator[List[Region]]:
+        ),
+        use_nms: bool = Param(
+            description="Enable non-maximum suppression.",
+            default=True,
+        ),
+        iou_threshold: float = Param(
+            description="IoU threshold for non-maximum suppression, only applicable when use_nms=True",
+            default=IOU_THRESHOLD,
+        )
+    ) -> Iterator[List[Region]]:
         """Stream process image inputs."""
         logger.info("Starting stream processing for images")
         for image in images:
             start_time = time.time()
-            result = self.predict(image, threshold=threshold)
+            result = self.predict(image, conf_threshold=conf_threshold, iou_threshold=iou_threshold, use_nms=use_nms)
             yield result
             logger.info(f"Processing time: {time.time() - start_time:.3f}s")
 
